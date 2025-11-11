@@ -1,0 +1,92 @@
+# Use postgres/example user/password credentials
+
+services:
+   # -------------------- DATABASE --------------------
+  db:
+    image: postgres:16
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: appdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # -------------------- PGADMIN (DB GUI) --------------------
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: always
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  # -------------------- BACKEND (FastAPI + uv) --------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    restart: always
+    depends_on:
+      - db
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: appdb
+    volumes:
+      - ./backend/src:/app/src
+    ports:
+      - "8000:8000"
+    command: uv run --reload src/main.py
+
+  # -------------------- FRONTEND (Next.js) --------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+    command: npm run dev # roda em modo developer
+
+  # -------------------- REVERSE PROXY --------------------
+  # Deixa apenas um entrypoint pública ao invés de várias tipo myapp:3000 e myapp:800
+  # E ajusta as requests para os apps corretos, request para /api/.. vai pro fastapi
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: always
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata: #nome do volume do postgres
+  pgadmin_data: #nome do volume do pgadmin
+  caddy_data: #nome do volume do caddy
+  caddy_config:
